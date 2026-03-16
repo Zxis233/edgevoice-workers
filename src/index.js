@@ -1,4 +1,11 @@
-import { bootstrapDatabase, createRoom, getAppConfig, getRoom, updateAppConfig } from "./db.js";
+import {
+  bootstrapDatabase,
+  createRoom,
+  deleteEmptyRooms,
+  getAppConfig,
+  getRoom,
+  updateAppConfig
+} from "./db.js";
 import { errorResponse, json, readJson } from "./http.js";
 import { resolveIceServers } from "./ice.js";
 import { VoiceRoom } from "./room-do.js";
@@ -14,6 +21,8 @@ import {
 
 const DEFAULT_ADMIN_TRIGGER_NAME = "admin";
 const DEFAULT_ADMIN_TRIGGER_ROOM_ID = "admin-room";
+const ROOM_ARCHIVE_PREFIX = "rooms/";
+const UTC_PLUS_8_OFFSET_MS = 8 * 60 * 60 * 1000;
 
 function buildJoinUrl(requestUrl, roomId) {
   const joinUrl = new URL(requestUrl.origin);
@@ -131,6 +140,46 @@ async function handleGetRoom(request, env, roomId) {
 async function handleIceServers(env) {
   const iceServers = await resolveIceServers(env);
   return json({ iceServers });
+}
+
+async function deleteArchivedSummaries(bucket) {
+  if (bucket === undefined) {
+    return 0;
+  }
+
+  let deletedCount = 0;
+  let cursor;
+
+  do {
+    const listing = await bucket.list({
+      prefix: ROOM_ARCHIVE_PREFIX,
+      cursor
+    });
+
+    if (listing.objects.length > 0) {
+      await Promise.all(listing.objects.map((object) => bucket.delete(object.key)));
+      deletedCount += listing.objects.length;
+    }
+
+    cursor = listing.truncated ? listing.cursor : undefined;
+  } while (cursor);
+
+  return deletedCount;
+}
+
+function isUtcPlus8Sunday(scheduledTime) {
+  const beijingTime = new Date(Number(scheduledTime ?? Date.now()) + UTC_PLUS_8_OFFSET_MS);
+  return beijingTime.getUTCDay() === 0;
+}
+
+async function handleScheduledCleanup(controller, env) {
+  const deletedRooms = await deleteEmptyRooms(env.DB);
+  console.log(`Scheduled empty room cleanup deleted ${deletedRooms} room(s).`);
+
+  if (isUtcPlus8Sunday(controller.scheduledTime)) {
+    const deletedSummaries = await deleteArchivedSummaries(env.ROOM_ARCHIVE);
+    console.log(`Scheduled weekly R2 summary cleanup deleted ${deletedSummaries} object(s).`);
+  }
 }
 
 async function handleGetAppConfig(env) {
@@ -266,5 +315,9 @@ export default {
     }
 
     return errorResponse(404, "Route not found.");
+  },
+
+  async scheduled(controller, env, ctx) {
+    ctx.waitUntil(handleScheduledCleanup(controller, env));
   }
 };

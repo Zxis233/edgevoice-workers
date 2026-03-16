@@ -1,6 +1,8 @@
 import { SELF, env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 
+const BEIJING_OFFSET_MS = 8 * 60 * 60 * 1000;
+
 async function createRoom(title = "Signal Test") {
   const response = await SELF.fetch("http://example.com/api/rooms", {
     method: "POST",
@@ -85,6 +87,20 @@ async function waitForCondition(check, timeoutMs = 2500) {
   }
 
   throw new Error("Timed out waiting for condition.");
+}
+
+function toBeijingArchiveFilename(archivedAt) {
+  const timestamp = new Date(archivedAt);
+  const beijingTime = new Date(timestamp.getTime() + BEIJING_OFFSET_MS);
+  const year = beijingTime.getUTCFullYear();
+  const month = `${beijingTime.getUTCMonth() + 1}`.padStart(2, "0");
+  const day = `${beijingTime.getUTCDate()}`.padStart(2, "0");
+  const hours = `${beijingTime.getUTCHours()}`.padStart(2, "0");
+  const minutes = `${beijingTime.getUTCMinutes()}`.padStart(2, "0");
+  const seconds = `${beijingTime.getUTCSeconds()}`.padStart(2, "0");
+  const milliseconds = `${beijingTime.getUTCMilliseconds()}`.padStart(3, "0");
+
+  return `${year}-${month}-${day}T${hours}-${minutes}-${seconds}-${milliseconds}+08-00.json`;
 }
 
 describe("voice room signaling", () => {
@@ -183,6 +199,9 @@ describe("voice room signaling", () => {
     const archiveObject = await env.ROOM_ARCHIVE.get(archiveEntry.key);
     const archivePayload = JSON.parse(await archiveObject.text());
 
+    expect(archiveEntry.key).toBe(
+      `rooms/${created.room.id}/${toBeijingArchiveFilename(archivePayload.archivedAt)}`
+    );
     expect(archivePayload.room.id).toBe(created.room.id);
     expect(archivePayload.participants).toHaveLength(2);
     expect(archivePayload.participants.map((participant) => participant.peerId)).toEqual([

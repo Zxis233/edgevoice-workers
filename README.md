@@ -26,6 +26,7 @@ Edge Voice Rooms 是一个基于 Cloudflare Workers、Durable Objects、D1、R2 
 - 成员加入、离开、静音、说话状态同步
 - D1 持久化房间与成员会话记录
 - 房间结束后自动把结构化归档写入 R2
+- 每天定时清理空房间，并在每周定时清理 R2 归档
 - 可选接入 Cloudflare Realtime TURN，提升复杂网络下的连通率
 - 管理员配置面板
 - 可动态关闭新建房间
@@ -165,6 +166,14 @@ npm test
 - Durable Object WebSocket 信令转发
 - 成员状态同步
 - 最后一位成员离开时的 R2 归档
+- 定时清理空房与 R2 归档
+
+## 定时维护
+
+- 每次定时触发都会执行空房清理
+- 当某次触发按 `UTC+8` 落在周日时，会额外清理 `R2` 里的 `rooms/` 归档
+- 仓库不再把 cron 写死在 `wrangler.jsonc`，这样你以后可以只在 Cloudflare 控制面板维护触发时间
+- 推荐在控制面板只保留 1 条“每日一次”的 cron；周日那次会自动顺带执行周清理
 
 ## 管理员配置面板
 
