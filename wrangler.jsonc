@@ -1,0 +1,56 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "webrtc-workers-voice-room",
+	"main": "src/index.js",
+	"compatibility_date": "2026-02-24",
+	"assets": {
+		"directory": "./public",
+		"binding": "ASSETS",
+		"run_worker_first": [
+			"/api/*",
+			"/health"
+		]
+	},
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "VOICE_ROOMS",
+				"class_name": "VoiceRoom"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": [
+				"VoiceRoom"
+			]
+		}
+	],
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "voice-room",
+			"migrations_dir": "./migrations",
+			"database_id": "a48d088e-db64-46b0-8812-3ee818949470"
+		}
+	],
+	"r2_buckets": [
+		{
+			"binding": "ROOM_ARCHIVE",
+			"bucket_name": "webrtc-workers-voice-room-room-archive"
+		}
+	],
+	"vars": {
+		"APP_NAME": "Edge Voice Rooms",
+		"DEFAULT_ROOM_CAPACITY": "5",
+		"MAX_ROOM_CAPACITY": "5",
+		"TURN_TTL_SECONDS": "3600"
+	},
+	"observability": {
+		"logs": {
+			"enabled": true,
+			"invocation_logs": true
+		}
+	}
+}

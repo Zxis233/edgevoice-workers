@@ -1,0 +1,39 @@
+# dependencies
+node_modules/
+
+# local caches
+.npm-cache/
+coverage/
+dist/
+.tmp/
+tmp/
+
+# Wrangler / Cloudflare local state
+.wrangler/
+
+# env files and secrets
+.env
+.env.*
+.dev.vars
+.dev.vars.*
+!.env.example
+!.dev.vars.example
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# local HTTPS certs
+*.pem
+*.key
+*.crt
+*.cert
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

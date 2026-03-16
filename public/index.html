@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Edge Voice Rooms</title>
+  <meta name="description" content="Cloudflare Workers + Durable Objects + D1 + R2 的 4-5 人小房间语音应用示例。">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+
+<body>
+  <div class="noise"></div>
+  <div class="shell">
+    <header class="hero">
+      <p class="hero__eyebrow">Cloudflare Workers + D1 + Durable Objects + R2</p>
+      <h1>Edge Voice Rooms</h1>
+      <p class="hero__copy">
+        完全由 Cloudflare 托管的的轻量语音房
+      </p>
+    </header>
+
+    <main class="layout">
+      <section class="panel panel--accent">
+        <div class="panel__header">
+          <p class="overline">Control Surface</p>
+          <h2>进入房间</h2>
+        </div>
+
+        <label class="field">
+          <span>你的昵称</span>
+          <input id="displayNameInput" maxlength="32" placeholder="例如：Mia" autocomplete="name">
+        </label>
+
+        <div class="field-row">
+          <label class="field">
+            <span>房间标题</span>
+            <input id="roomTitleInput" maxlength="48" placeholder="例如：产品评审">
+          </label>
+
+          <label class="field">
+            <span>房间 ID</span>
+            <input id="roomIdInput" maxlength="40" placeholder="room-xxxxxxxxxx">
+          </label>
+        </div>
+
+        <div class="actions">
+          <button id="createButton" class="button button--primary">创建并加入</button>
+          <button id="joinButton" class="button button--ghost">加入现有房间</button>
+        </div>
+
+        <p id="appStatus" class="status status--neutral">先输入昵称，再创建房间或加入已有链接。</p>
+      </section>
+
+      <section id="roomPanel" class="panel panel--room" hidden>
+        <div class="room-header">
+          <div>
+            <p class="overline">Live Room</p>
+            <h2 id="roomName">未加入房间</h2>
+            <p id="roomMeta" class="room-meta">创建或加入房间后，这里会显示房间信息。</p>
+          </div>
+
+          <div class="room-actions">
+            <button id="copyLinkButton" class="button button--ghost">复制邀请链接</button>
+            <button id="muteButton" class="button button--warm" disabled>静音麦克风</button>
+            <button id="leaveButton" class="button button--danger" disabled>离开房间</button>
+          </div>
+        </div>
+
+        <div class="room-badge">
+          <span id="participantCount">0 / 5</span>
+          <span>在线</span>
+        </div>
+
+        <div id="participantGrid" class="participant-grid">
+          <div class="participant-empty">加入房间后会在这里显示参与者、静音状态和连接状态。</div>
+        </div>
+
+        <div id="remoteAudioBin" class="audio-bin" aria-hidden="true"></div>
+      </section>
+
+      <section class="panel panel--notes">
+        <div class="panel__header">
+          <p class="overline">Design Notes</p>
+          <h2>实现边界</h2>
+        </div>
+
+        <ul class="notes-list">
+          <li>适合 4-5 人语音小房间</li>
+          <li>Durable Object 负责 WebSocket 信令、加入离开广播和在线状态同步</li>
+          <li>D1 记录房间与成员会话，最后一个人离开时会把摘要写入 R2</li>
+          <li>配置 Cloudflare Realtime TURN 凭据后，可通过 Worker 动态下发 ICE Servers</li>
+        </ul>
+      </section>
+    </main>
+  </div>
+
+  <script type="module" src="/app.js"></script>
+</body>
+
+</html>
