@@ -1,6 +1,7 @@
 import { DEFAULT_APP_CONFIG, normalizeAppConfig } from "./room-utils.js";
 
 const APP_CONFIG_ROW_ID = "global";
+const ARCHIVE_TIMEZONE_OFFSET_MS = 8 * 60 * 60 * 1000;
 
 const SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS rooms (
@@ -101,6 +102,28 @@ function mapAppConfigRow(row) {
 
 function countChanges(result) {
   return Number(result.meta?.changes ?? result.meta?.rows_written ?? 0);
+}
+
+function padNumber(value, width = 2) {
+  return `${value}`.padStart(width, "0");
+}
+
+function formatArchiveKeyTimestamp(archivedAt) {
+  const timestamp = new Date(archivedAt);
+  if (Number.isNaN(timestamp.getTime())) {
+    return `${archivedAt ?? ""}`.replace(/[:.]/g, "-");
+  }
+
+  const beijingTime = new Date(timestamp.getTime() + ARCHIVE_TIMEZONE_OFFSET_MS);
+  const year = beijingTime.getUTCFullYear();
+  const month = padNumber(beijingTime.getUTCMonth() + 1);
+  const day = padNumber(beijingTime.getUTCDate());
+  const hours = padNumber(beijingTime.getUTCHours());
+  const minutes = padNumber(beijingTime.getUTCMinutes());
+  const seconds = padNumber(beijingTime.getUTCSeconds());
+  const milliseconds = padNumber(beijingTime.getUTCMilliseconds(), 3);
+
+  return `${year}-${month}-${day}T${hours}-${minutes}-${seconds}-${milliseconds}+08-00`;
 }
 
 async function ensureAppConfigRow(db) {
@@ -398,7 +421,7 @@ export async function archiveRoom(env, roomId, archivedAt) {
     participants: results.map(mapParticipantRow)
   };
 
-  const key = `rooms/${roomId}/${archivedAt.replace(/[:.]/g, "-")}.json`;
+  const key = `rooms/${roomId}/${formatArchiveKeyTimestamp(archivedAt)}.json`;
 
   await env.ROOM_ARCHIVE.put(key, JSON.stringify(payload, null, 2), {
     httpMetadata: {
