@@ -99,6 +99,10 @@ function mapAppConfigRow(row) {
   };
 }
 
+function countChanges(result) {
+  return Number(result.meta?.changes ?? result.meta?.rows_written ?? 0);
+}
+
 async function ensureAppConfigRow(db) {
   await db
     .prepare(
@@ -194,7 +198,7 @@ export async function createRoom(db, room) {
     .bind(room.id, room.title, room.capacity, room.createdAt)
     .run();
 
-  const changes = Number(result.meta?.changes ?? result.meta?.rows_written ?? 0);
+  const changes = countChanges(result);
   return changes > 0 ? room : null;
 }
 
@@ -328,6 +332,40 @@ export async function markParticipantLeft(db, roomId, peerId, leftAt) {
       )
       .bind(roomId, leftAt)
   ]);
+}
+
+export async function deleteEmptyRooms(db) {
+  await bootstrapDatabase(db);
+
+  await db
+    .prepare(
+      `DELETE FROM room_participants
+       WHERE room_id IN (
+         SELECT id
+         FROM rooms
+         WHERE NOT EXISTS (
+           SELECT 1
+           FROM room_participants AS active
+           WHERE active.room_id = rooms.id
+             AND active.left_at IS NULL
+         )
+       )`
+    )
+    .run();
+
+  const result = await db
+    .prepare(
+      `DELETE FROM rooms
+       WHERE NOT EXISTS (
+         SELECT 1
+         FROM room_participants AS active
+         WHERE active.room_id = rooms.id
+           AND active.left_at IS NULL
+       )`
+    )
+    .run();
+
+  return countChanges(result);
 }
 
 export async function archiveRoom(env, roomId, archivedAt) {
