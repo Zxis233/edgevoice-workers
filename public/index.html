@@ -5,7 +5,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Edge Voice Rooms</title>
-  <meta name="description" content="Cloudflare Workers + Durable Objects + D1 + R2 的 4-5 人小房间语音应用示例。">
+  <meta name="description" content="Cloudflare Workers + Durable Objects + D1 + R2 的 4-5 人小房间语音应用示例">
   <link rel="stylesheet" href="/styles.css">
 </head>
 
@@ -21,7 +21,7 @@
     </header>
 
     <main class="layout">
-      <section class="panel panel--accent">
+      <section id="controlPanel" class="panel panel--accent">
         <div class="panel__header">
           <p class="overline">Control Surface</p>
           <h2>进入房间</h2>
@@ -29,18 +29,18 @@
 
         <label class="field">
           <span>你的昵称</span>
-          <input id="displayNameInput" maxlength="32" placeholder="例如：Mia" autocomplete="name">
+          <input id="displayNameInput" maxlength="32" placeholder="Sakuraba Ema" autocomplete="name">
         </label>
 
         <div class="field-row">
           <label class="field">
             <span>房间标题</span>
-            <input id="roomTitleInput" maxlength="48" placeholder="例如：产品评审">
+            <input id="roomTitleInput" maxlength="48" placeholder="Manosaba">
           </label>
 
           <label class="field">
             <span>房间 ID</span>
-            <input id="roomIdInput" maxlength="40" placeholder="room-xxxxxxxxxx">
+            <input id="roomIdInput" maxlength="32" placeholder="room-0d000721">
           </label>
         </div>
 
@@ -49,7 +49,44 @@
           <button id="joinButton" class="button button--ghost">加入现有房间</button>
         </div>
 
-        <p id="appStatus" class="status status--neutral">先输入昵称，再创建房间或加入已有链接。</p>
+        <p id="appStatus" class="status status--neutral">先输入昵称，再创建房间或加入已有链接</p>
+      </section>
+
+      <section id="adminPanel" class="panel panel--admin" hidden>
+        <div class="panel__header">
+          <p class="overline">Admin Console</p>
+          <h2>全局语音房配置</h2>
+          <p id="adminMeta" class="panel-copy">可切换建房开关，并定义随机房间 ID 的模板和随机段长度</p>
+        </div>
+
+        <label class="toggle-field">
+          <input id="adminAllowCreationInput" type="checkbox">
+          <span>允许继续新建语音房</span>
+        </label>
+
+        <div class="field-row field-row--admin">
+          <label class="field">
+            <span>房间 ID 模板</span>
+            <input id="adminRoomPatternInput" maxlength="48" placeholder="例如：room-{random}">
+            <small class="field-hint">使用 <code>{random}</code> 作为随机占位符；如果省略，系统会自动补上</small>
+          </label>
+
+          <label class="field">
+            <span>随机段长度</span>
+            <input id="adminRoomLengthInput" type="number" min="4" max="24" inputmode="numeric">
+            <small class="field-hint">范围 4-24，长度越短越容易出现房间 ID 碰撞</small>
+          </label>
+        </div>
+
+        <div class="preview-box">
+          <p class="preview-box__label">实时预览</p>
+          <p id="adminPreview" class="preview-box__value">room-previewtok</p>
+        </div>
+
+        <div class="actions">
+          <button id="adminSaveButton" class="button button--primary">保存配置</button>
+          <button id="adminExitButton" class="button button--ghost">退出管理模式</button>
+        </div>
       </section>
 
       <section id="roomPanel" class="panel panel--room" hidden>

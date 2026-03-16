@@ -1,3 +1,15 @@
+const DEFAULT_APP_CONFIG = Object.freeze({
+  allowRoomCreation: true,
+  roomNamePattern: "room-{random}",
+  roomRandomLength: 10,
+  updatedAt: null
+});
+
+const ROOM_RANDOM_LENGTH_RANGE = Object.freeze({
+  min: 4,
+  max: 24
+});
+
 const elements = {
   displayNameInput: document.querySelector("#displayNameInput"),
   roomTitleInput: document.querySelector("#roomTitleInput"),
@@ -13,7 +25,15 @@ const elements = {
   roomMeta: document.querySelector("#roomMeta"),
   participantCount: document.querySelector("#participantCount"),
   participantGrid: document.querySelector("#participantGrid"),
-  remoteAudioBin: document.querySelector("#remoteAudioBin")
+  remoteAudioBin: document.querySelector("#remoteAudioBin"),
+  adminPanel: document.querySelector("#adminPanel"),
+  adminMeta: document.querySelector("#adminMeta"),
+  adminAllowCreationInput: document.querySelector("#adminAllowCreationInput"),
+  adminRoomPatternInput: document.querySelector("#adminRoomPatternInput"),
+  adminRoomLengthInput: document.querySelector("#adminRoomLengthInput"),
+  adminPreview: document.querySelector("#adminPreview"),
+  adminSaveButton: document.querySelector("#adminSaveButton"),
+  adminExitButton: document.querySelector("#adminExitButton")
 };
 
 const state = {
@@ -31,7 +51,11 @@ const state = {
   speakingTimer: null,
   heartbeatTimer: null,
   isMuted: false,
-  isLeaving: false
+  isLeaving: false,
+  publicConfig: { ...DEFAULT_APP_CONFIG },
+  adminToken: "",
+  adminRoomId: "",
+  isAdminMode: false
 };
 
 function setStatus(message, tone = "neutral") {
@@ -167,8 +191,100 @@ function ensureDisplayName() {
   return displayName.slice(0, 32);
 }
 
+function normalizeRoomNamePattern(value) {
+  const compact = `${value ?? ""}`
+    .trim()
+    .replace(/\s+/g, "-")
+    .toLowerCase()
+    .replace(/[^a-z0-9-{}]+/g, "-")
+    .replace(/-{2,}/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+
+  const basePattern = compact || DEFAULT_APP_CONFIG.roomNamePattern;
+  return basePattern.includes("{random}") ? basePattern : `${basePattern}-{random}`;
+}
+
+function clampRoomRandomLength(value) {
+  const parsed = Number.parseInt(`${value ?? ""}`, 10);
+
+  if (Number.isNaN(parsed)) {
+    return DEFAULT_APP_CONFIG.roomRandomLength;
+  }
+
+  return Math.max(
+    ROOM_RANDOM_LENGTH_RANGE.min,
+    Math.min(parsed, ROOM_RANDOM_LENGTH_RANGE.max)
+  );
+}
+
+function sanitizeRoomId(rawValue, fallbackToken) {
+  const sanitized = `${rawValue ?? ""}`
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/-{2,}/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  return sanitized || `room-${fallbackToken}`;
+}
+
+function previewRoomId(config) {
+  const roomRandomLength = clampRoomRandomLength(config?.roomRandomLength);
+  const roomNamePattern = normalizeRoomNamePattern(config?.roomNamePattern);
+  const previewToken = "previewtoken".slice(0, roomRandomLength).padEnd(roomRandomLength, "x");
+  return sanitizeRoomId(roomNamePattern.replaceAll("{random}", previewToken), previewToken);
+}
+
+function normalizePublicConfig(config) {
+  return {
+    allowRoomCreation: config?.allowRoomCreation !== false,
+    roomNamePattern: normalizeRoomNamePattern(config?.roomNamePattern),
+    roomRandomLength: clampRoomRandomLength(config?.roomRandomLength),
+    updatedAt: config?.updatedAt ?? null
+  };
+}
+
+function formatUpdatedAt(value) {
+  if (!value) {
+    return "尚未更新";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleString("zh-CN", { hour12: false });
+}
+
+function applyPublicConfig(config) {
+  state.publicConfig = normalizePublicConfig(config);
+  updateButtons();
+  renderAdminPanel();
+}
+
+function applyIdleStatus() {
+  if (state.isAdminMode) {
+    setStatus("管理员模式已开启，可调整建房策略和随机房间 ID 规则。", "info");
+    return;
+  }
+
+  if (state.publicConfig.allowRoomCreation) {
+    setStatus("先输入昵称，再创建房间或加入已有链接。", "neutral");
+    return;
+  }
+
+  setStatus("管理员已关闭新建房间，请输入已有房间 ID 加入。", "info");
+}
+
 function updateButtons() {
   const connected = Boolean(state.localStream);
+  const roomCreationAllowed = state.publicConfig.allowRoomCreation;
+
+  elements.createButton.disabled = !roomCreationAllowed || state.isAdminMode;
+  elements.joinButton.disabled = state.isAdminMode;
+  elements.adminSaveButton.disabled = !state.isAdminMode;
+  elements.adminExitButton.disabled = !state.isAdminMode;
   elements.muteButton.disabled = !connected;
   elements.leaveButton.disabled = !connected;
   elements.copyLinkButton.disabled = !state.roomId;
@@ -252,6 +368,41 @@ function renderRoomMeta() {
   elements.roomMeta.textContent = roomId
     ? `房间 ID：${roomId} · 邀请链接：${joinLink}`
     : "创建或加入房间后，这里会显示房间信息。";
+}
+
+function updateAdminMeta(config = state.publicConfig) {
+  const creationLabel = config.allowRoomCreation ? "允许新建房间" : "禁止新建房间";
+  elements.adminMeta.textContent = `当前策略：${creationLabel} · 上次更新：${formatUpdatedAt(config.updatedAt)}`;
+}
+
+
+function updateAdminPreview() {
+  const config = {
+    allowRoomCreation: elements.adminAllowCreationInput.checked,
+    roomNamePattern: elements.adminRoomPatternInput.value,
+    roomRandomLength: elements.adminRoomLengthInput.value,
+    updatedAt: state.publicConfig.updatedAt
+  };
+
+  elements.adminPreview.textContent = previewRoomId(config);
+}
+
+function syncAdminForm(config = state.publicConfig) {
+  elements.adminAllowCreationInput.checked = config.allowRoomCreation;
+  elements.adminRoomPatternInput.value = config.roomNamePattern;
+  elements.adminRoomLengthInput.value = String(config.roomRandomLength);
+  updateAdminMeta();
+  updateAdminPreview();
+}
+
+function renderAdminPanel() {
+  elements.adminPanel.hidden = !state.isAdminMode;
+
+  if (!state.isAdminMode) {
+    return;
+  }
+
+  syncAdminForm();
 }
 
 function upsertParticipant(peer) {
@@ -646,6 +797,95 @@ async function handleSocketMessage(rawData) {
   }
 }
 
+async function loadAppConfig() {
+  const payload = await fetchJson("/api/app-config");
+  applyPublicConfig(payload.config);
+  return payload;
+}
+
+async function tryEnterAdminMode(roomId) {
+  const username = ensureDisplayName();
+  const normalizedRoomId = normalizeRoomId(roomId || elements.roomIdInput.value);
+  const response = await fetch("/api/admin/session", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({
+      username,
+      roomId: normalizedRoomId
+    })
+  });
+
+  if (response.status === 401) {
+    return false;
+  }
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error || `管理员登录失败 (${response.status})`);
+  }
+
+  state.adminToken = username;
+  state.adminRoomId = normalizedRoomId;
+  state.isAdminMode = true;
+  applyPublicConfig(data.config);
+  syncAdminForm();
+  setStatus("管理员模式已开启，可调整建房策略和随机房间 ID 规则。", "info");
+  return true;
+}
+
+function exitAdminMode(message = "已退出管理员模式。") {
+  state.adminToken = "";
+  state.adminRoomId = "";
+  state.isAdminMode = false;
+  renderAdminPanel();
+  updateButtons();
+  setStatus(message, "info");
+}
+
+function readAdminForm() {
+  return {
+    allowRoomCreation: elements.adminAllowCreationInput.checked,
+    roomNamePattern: elements.adminRoomPatternInput.value,
+    roomRandomLength: elements.adminRoomLengthInput.value
+  };
+}
+
+async function saveAdminConfig() {
+  if (!state.adminToken || !state.adminRoomId) {
+    throw new Error("管理员会话已失效，请重新输入特殊管理员昵称和房间 ID 后点击加入。");
+  }
+
+  const response = await fetch("/api/admin/config", {
+    method: "PUT",
+    headers: {
+      "content-type": "application/json",
+      "x-admin-token": state.adminToken,
+      "x-admin-room-id": state.adminRoomId
+    },
+    body: JSON.stringify(readAdminForm())
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (response.status === 401) {
+    state.adminToken = "";
+    state.adminRoomId = "";
+    state.isAdminMode = false;
+    renderAdminPanel();
+    updateButtons();
+    throw new Error(data.error || "管理员会话已失效，请重新登录。");
+  }
+
+  if (!response.ok) {
+    throw new Error(data.error || `保存配置失败 (${response.status})`);
+  }
+
+  applyPublicConfig(data.config);
+  syncAdminForm();
+  setStatus("全局配置已保存。", "success");
+}
+
 async function joinRoom(roomId) {
   const displayName = ensureDisplayName();
   const normalizedRoomId = normalizeRoomId(roomId || elements.roomIdInput.value);
@@ -729,6 +969,10 @@ async function joinRoom(roomId) {
 }
 
 async function createAndJoinRoom() {
+  if (!state.publicConfig.allowRoomCreation) {
+    throw new Error("管理员已关闭新建房间。");
+  }
+
   const displayName = ensureDisplayName();
   const title = `${elements.roomTitleInput.value ?? ""}`.trim() || "Quick Voice Room";
 
@@ -786,10 +1030,23 @@ async function copyInviteLink() {
 }
 
 async function bootstrapRoomPreview() {
+  renderParticipants();
+  renderRoomMeta();
+  updateButtons();
+
+  let configLoaded = false;
+  try {
+    await loadAppConfig();
+    configLoaded = true;
+  } catch {
+    applyPublicConfig(DEFAULT_APP_CONFIG);
+    setStatus("读取应用配置失败，暂按默认建房策略展示。", "error");
+  }
+
   if (!state.roomId) {
-    updateButtons();
-    renderRoomMeta();
-    renderParticipants();
+    if (configLoaded) {
+      applyIdleStatus();
+    }
     return;
   }
 
@@ -803,7 +1060,12 @@ async function bootstrapRoomPreview() {
     updateButtons();
     setStatus(`已读取房间 ${payload.room.title}，输入昵称后即可加入。`, "info");
   } catch {
-    setStatus("链接中的房间不存在，可以新建一个。", "error");
+    if (state.publicConfig.allowRoomCreation) {
+      setStatus("链接中的房间不存在，可以新建一个。", "error");
+      return;
+    }
+
+    setStatus("链接中的房间不存在，且当前不允许新建房间。", "error");
   }
 }
 
@@ -818,7 +1080,18 @@ elements.createButton.addEventListener("click", async () => {
 
 elements.joinButton.addEventListener("click", async () => {
   try {
-    await joinRoom(elements.roomIdInput.value || state.roomId);
+    const requestedRoomId = normalizeRoomId(elements.roomIdInput.value || state.roomId);
+
+    if (!requestedRoomId) {
+      throw new Error("请输入房间 ID。");
+    }
+
+    const enteredAdminMode = await tryEnterAdminMode(requestedRoomId);
+    if (enteredAdminMode) {
+      return;
+    }
+
+    await joinRoom(requestedRoomId);
   } catch (error) {
     setStatus(error.message || "加入房间失败。", "error");
     resetSession({ preserveRoom: true });
@@ -841,6 +1114,31 @@ elements.copyLinkButton.addEventListener("click", async () => {
   }
 });
 
+elements.adminRoomPatternInput.addEventListener("input", () => {
+  updateAdminPreview();
+});
+
+elements.adminRoomLengthInput.addEventListener("input", () => {
+  updateAdminPreview();
+});
+
+elements.adminAllowCreationInput.addEventListener("change", () => {
+  updateAdminMeta({
+    ...state.publicConfig,
+    allowRoomCreation: elements.adminAllowCreationInput.checked
+  });
+  updateAdminPreview();
+});
+elements.adminSaveButton.addEventListener("click", async () => {
+  try {
+    await saveAdminConfig();
+  } catch (error) {
+    setStatus(error.message || "保存管理员配置失败。", "error");
+  }
+});
+elements.adminExitButton.addEventListener("click", () => {
+  exitAdminMode();
+});
 window.addEventListener("beforeunload", () => {
   state.isLeaving = true;
   sendMessage({ type: "leave" });

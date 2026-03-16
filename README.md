@@ -15,7 +15,7 @@
   </a>
 </p>
 
-Edge Voice Rooms 是一个基于 Cloudflare Workers、Durable Objects、D1、R2 和原生 WebRTC 的 4-5 人小房间语音应用示例，可在 Cloudflare 边缘上跑通的语音房基线实现。
+Edge Voice Rooms 是一个基于 Cloudflare Workers、Durable Objects、D1、R2 和原生 WebRTC 的 4-5 人小房间语音应用示例。它提供一个完整可运行的边缘语音房基线实现：前端静态资源由 Workers Assets 托管，房间状态与信令由 Worker + Durable Object 负责，房间会话记录写入 D1，结束后归档到 R2。
 
 ## 功能简介
 
@@ -27,23 +27,27 @@ Edge Voice Rooms 是一个基于 Cloudflare Workers、Durable Objects、D1、R2 
 - D1 持久化房间与成员会话记录
 - 房间结束后自动把结构化归档写入 R2
 - 可选接入 Cloudflare Realtime TURN，提升复杂网络下的连通率
+- 管理员配置面板
+- 可动态关闭新建房间
+- 可配置随机房间 ID 的模板和随机段长度
 
 ## 技术实现
 
 ### 整体架构
 
 1. 前端静态页面由 Workers Assets 提供。
-2. 用户加入房间时，浏览器先调用 `/api/ice-servers` 获取 ICE 配置。
-3. 前端再通过 `/api/rooms/:roomId/ws` 连到对应房间的 Durable Object。
-4. Durable Object 只负责房间成员管理和 WebRTC 信令转发，不搬运真实音频流。
+2. 浏览器加入房间前，会先调用 `/api/app-config` 和 `/api/ice-servers` 获取运行配置与 ICE 配置。
+3. 浏览器通过 `/api/rooms/:roomId/ws` 连接到对应房间的 Durable Object。
+4. Durable Object 负责单房间成员管理、WebSocket 生命周期和 WebRTC 信令转发，不搬运真实音频流。
 5. 各浏览器之间通过 WebRTC 建立音频 mesh 连接。
 6. D1 记录房间信息、参与者加入离开时间和最后状态。
-7. 当最后一个人离开时，Worker 会把本场会话的结构化摘要写入 R2。
+7. 当最后一个人离开时，Worker 会把本场会话的结构化归档写入 R2。
 
 ### 后端分工
 
 - `Worker`
   - 房间创建与查询 API
+  - 全局配置读取与管理员配置接口
   - ICE Servers 下发
   - 静态资源托管
 - `Durable Object`
@@ -53,6 +57,7 @@ Edge Voice Rooms 是一个基于 Cloudflare Workers、Durable Objects、D1、R2 
 - `D1`
   - `rooms`
   - `room_participants`
+  - `app_config`
 - `R2`
   - 保存房间结束后的 JSON 归档
 
@@ -62,16 +67,7 @@ Edge Voice Rooms 是一个基于 Cloudflare Workers、Durable Objects、D1、R2 
 - 使用 `RTCPeerConnection` 建立音频 mesh
 - 本地麦克风状态、成员状态、连接状态在 UI 中展示
 - 对移动端 `getUserMedia` 做了兼容与错误提示处理
-
-### 为什么使用 mesh
-
-这个项目的目标人数是 4-5 人。对于这个规模，mesh 的优势是：
-
-- 架构简单
-- 不需要单独的媒体服务器
-- 可以直接把 Cloudflare 用在信令与状态层
-
-超过这个人数后，推荐切换到 SFU 方案。
+- 只有同时输入管理员昵称和特殊房间 ID，点击“加入现有房间”才会进入配置面板
 
 ## 项目结构
 
@@ -118,6 +114,15 @@ npm install
 npm run db:migrate:local
 ```
 
+### 本地管理员入口
+
+如果你想自定义管理员昵称和特殊房间 ID，可以在项目根目录创建 `.dev.vars`：
+
+```dotenv
+ADMIN_TRIGGER_NAME=admin
+ADMIN_TRIGGER_ROOM_ID=admin-room
+```
+
 ### 启动本地开发
 
 ```bash
@@ -161,7 +166,23 @@ npm test
 - 成员状态同步
 - 最后一位成员离开时的 R2 归档
 
+## 管理员配置面板
+
+进入方式：
+
+1. 在昵称输入管理员昵称
+2. 在房间 ID 输入特殊管理员房间 ID
+3. 点击“加入现有房间”
+
+管理员面板当前支持：
+
+- 开启 / 关闭新建房间
+- 配置随机房间 ID 模板，例如 `room-{random}`、`team-{random}`
+- 配置随机段长度，范围 `4-24`
+
 ## 部署方法
+
+**如果要部署到公开网络，请务必同时修改管理员名称和特殊房间 ID！**
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Zxis233/edgevoice-workers)
 
@@ -218,15 +239,6 @@ npm run deploy
 npm run db:migrate:remote
 ```
 
-### 6. 验证部署
-
-可以先检查：
-
-```bash
-curl https://你的域名/health
-curl https://你的域名/api/ice-servers
-```
-
 ## 未来可扩展方向
 
 - 切换到 SFU 架构
@@ -235,3 +247,4 @@ curl https://你的域名/api/ice-servers
 - 会后 AI 总结
 - 设备切换与音频输入输出选择
 - 更完整的移动端调试 UI
+- 更严格的管理员认证

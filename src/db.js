@@ -1,3 +1,7 @@
+import { DEFAULT_APP_CONFIG, normalizeAppConfig } from "./room-utils.js";
+
+const APP_CONFIG_ROW_ID = "global";
+
 const SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS rooms (
     id TEXT PRIMARY KEY,
@@ -18,6 +22,13 @@ const SCHEMA_STATEMENTS = [
     last_state TEXT,
     PRIMARY KEY (room_id, peer_id),
     FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE
+  )`,
+  `CREATE TABLE IF NOT EXISTS app_config (
+    id TEXT PRIMARY KEY,
+    allow_room_creation INTEGER NOT NULL DEFAULT 1,
+    room_name_pattern TEXT NOT NULL DEFAULT 'room-{random}',
+    room_random_length INTEGER NOT NULL DEFAULT 10,
+    updated_at TEXT NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS idx_room_participants_room_left_at
    ON room_participants (room_id, left_at)`
@@ -70,14 +81,111 @@ function mapParticipantRow(row) {
   };
 }
 
+function mapAppConfigRow(row) {
+  if (!row) {
+    return {
+      ...DEFAULT_APP_CONFIG,
+      updatedAt: null
+    };
+  }
+
+  return {
+    ...normalizeAppConfig({
+      allowRoomCreation: Boolean(row.allow_room_creation),
+      roomNamePattern: row.room_name_pattern,
+      roomRandomLength: Number(row.room_random_length)
+    }),
+    updatedAt: row.updated_at
+  };
+}
+
+async function ensureAppConfigRow(db) {
+  await db
+    .prepare(
+      `INSERT INTO app_config (
+         id,
+         allow_room_creation,
+         room_name_pattern,
+         room_random_length,
+         updated_at
+       )
+       VALUES (?1, ?2, ?3, ?4, ?5)
+       ON CONFLICT(id) DO NOTHING`
+    )
+    .bind(
+      APP_CONFIG_ROW_ID,
+      1,
+      DEFAULT_APP_CONFIG.roomNamePattern,
+      DEFAULT_APP_CONFIG.roomRandomLength,
+      new Date().toISOString()
+    )
+    .run();
+}
+
 export async function bootstrapDatabase(db) {
   await db.batch(SCHEMA_STATEMENTS.map((statement) => db.prepare(statement)));
+}
+
+export async function getAppConfig(db) {
+  await bootstrapDatabase(db);
+  await ensureAppConfigRow(db);
+
+  const row = await db
+    .prepare(
+      `SELECT
+         id,
+         allow_room_creation,
+         room_name_pattern,
+         room_random_length,
+         updated_at
+       FROM app_config
+       WHERE id = ?1`
+    )
+    .bind(APP_CONFIG_ROW_ID)
+    .first();
+
+  return mapAppConfigRow(row);
+}
+
+export async function updateAppConfig(db, appConfig) {
+  await bootstrapDatabase(db);
+  await ensureAppConfigRow(db);
+
+  const current = await getAppConfig(db);
+  const nextConfig = normalizeAppConfig({
+    ...current,
+    ...appConfig
+  });
+  const updatedAt = new Date().toISOString();
+
+  await db
+    .prepare(
+      `UPDATE app_config
+       SET allow_room_creation = ?2,
+           room_name_pattern = ?3,
+           room_random_length = ?4,
+           updated_at = ?5
+       WHERE id = ?1`
+    )
+    .bind(
+      APP_CONFIG_ROW_ID,
+      nextConfig.allowRoomCreation ? 1 : 0,
+      nextConfig.roomNamePattern,
+      nextConfig.roomRandomLength,
+      updatedAt
+    )
+    .run();
+
+  return {
+    ...nextConfig,
+    updatedAt
+  };
 }
 
 export async function createRoom(db, room) {
   await bootstrapDatabase(db);
 
-  await db
+  const result = await db
     .prepare(
       `INSERT INTO rooms (id, title, capacity, status, created_at, updated_at)
        VALUES (?1, ?2, ?3, 'active', ?4, ?4)
@@ -86,7 +194,8 @@ export async function createRoom(db, room) {
     .bind(room.id, room.title, room.capacity, room.createdAt)
     .run();
 
-  return room;
+  const changes = Number(result.meta?.changes ?? result.meta?.rows_written ?? 0);
+  return changes > 0 ? room : null;
 }
 
 export async function listActiveParticipants(db, roomId) {

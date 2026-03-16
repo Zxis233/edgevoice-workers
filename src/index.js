@@ -1,14 +1,19 @@
-import { bootstrapDatabase, createRoom, getRoom } from "./db.js";
+import { bootstrapDatabase, createRoom, getAppConfig, getRoom, updateAppConfig } from "./db.js";
 import { errorResponse, json, readJson } from "./http.js";
 import { resolveIceServers } from "./ice.js";
 import { VoiceRoom } from "./room-do.js";
 import {
   clampCapacity,
   createRoomId,
+  normalizeAppConfig,
   normalizeDisplayName,
   normalizePeerId,
-  normalizeTitle
+  normalizeTitle,
+  previewRoomId
 } from "./room-utils.js";
+
+const DEFAULT_ADMIN_TRIGGER_NAME = "admin";
+const DEFAULT_ADMIN_TRIGGER_ROOM_ID = "admin-room";
 
 function buildJoinUrl(requestUrl, roomId) {
   const joinUrl = new URL(requestUrl.origin);
@@ -16,17 +21,88 @@ function buildJoinUrl(requestUrl, roomId) {
   return joinUrl.toString();
 }
 
+function getAdminTriggerName(env) {
+  const configured = normalizeDisplayName(env.ADMIN_TRIGGER_NAME);
+  return configured || DEFAULT_ADMIN_TRIGGER_NAME;
+}
+
+function normalizeAdminRoomId(value) {
+  return `${value ?? ""}`
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/-{2,}/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 32);
+}
+
+function getAdminTriggerRoomId(env) {
+  const configured = normalizeAdminRoomId(env.ADMIN_TRIGGER_ROOM_ID);
+  return configured || DEFAULT_ADMIN_TRIGGER_ROOM_ID;
+}
+
+function getAdminToken(request) {
+  return normalizeDisplayName(request.headers.get("x-admin-token"));
+}
+
+function getAdminRoomId(request) {
+  return normalizeAdminRoomId(request.headers.get("x-admin-room-id"));
+}
+
+function isAdminRequest(request, env) {
+  return (
+    getAdminToken(request) === getAdminTriggerName(env) &&
+    getAdminRoomId(request) === getAdminTriggerRoomId(env)
+  );
+}
+
+function buildConfigPayload(config) {
+  const normalized = normalizeAppConfig(config);
+
+  return {
+    config: {
+      ...normalized,
+      updatedAt: config?.updatedAt ?? null
+    },
+    roomIdPreview: previewRoomId(normalized)
+  };
+}
+
+async function createConfiguredRoom(env, title, capacity, createdAt, appConfig) {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const room = await createRoom(env.DB, {
+      id: createRoomId(appConfig),
+      title,
+      capacity,
+      createdAt
+    });
+
+    if (room) {
+      return room;
+    }
+  }
+
+  return null;
+}
+
 async function handleCreateRoom(request, env) {
   const payload = await readJson(request);
+  const appConfig = await getAppConfig(env.DB);
+
+  if (!appConfig.allowRoomCreation) {
+    return errorResponse(403, "管理员已关闭新建房间。", {
+      allowRoomCreation: false
+    });
+  }
+
   const title = normalizeTitle(payload.title);
   const capacity = clampCapacity(payload.capacity, env);
   const createdAt = new Date().toISOString();
-  const room = await createRoom(env.DB, {
-    id: createRoomId(),
-    title,
-    capacity,
-    createdAt
-  });
+  const room = await createConfiguredRoom(env, title, capacity, createdAt, appConfig);
+
+  if (!room) {
+    return errorResponse(503, "房间 ID 生成冲突过多，请稍后重试。");
+  }
 
   return json(
     {
@@ -55,6 +131,53 @@ async function handleGetRoom(request, env, roomId) {
 async function handleIceServers(env) {
   const iceServers = await resolveIceServers(env);
   return json({ iceServers });
+}
+
+async function handleGetAppConfig(env) {
+  const config = await getAppConfig(env.DB);
+  return json(buildConfigPayload(config));
+}
+
+async function handleAdminSession(request, env) {
+  const payload = await readJson(request);
+  const username = normalizeDisplayName(payload.username);
+  const roomId = normalizeAdminRoomId(payload.roomId);
+
+  if (
+    !username ||
+    !roomId ||
+    username !== getAdminTriggerName(env) ||
+    roomId !== getAdminTriggerRoomId(env)
+  ) {
+    return errorResponse(401, "管理员身份校验失败。");
+  }
+
+  const config = await getAppConfig(env.DB);
+  return json(buildConfigPayload(config));
+}
+
+async function handleGetAdminConfig(request, env) {
+  if (!isAdminRequest(request, env)) {
+    return errorResponse(401, "未授权的管理员请求。");
+  }
+
+  const config = await getAppConfig(env.DB);
+  return json(buildConfigPayload(config));
+}
+
+async function handleUpdateAdminConfig(request, env) {
+  if (!isAdminRequest(request, env)) {
+    return errorResponse(401, "未授权的管理员请求。");
+  }
+
+  const payload = await readJson(request);
+  const config = await updateAppConfig(env.DB, {
+    allowRoomCreation: payload.allowRoomCreation,
+    roomNamePattern: payload.roomNamePattern,
+    roomRandomLength: payload.roomRandomLength
+  });
+
+  return json(buildConfigPayload(config));
 }
 
 async function handleRoomSocket(request, env, roomId) {
@@ -102,6 +225,22 @@ export default {
         app: env.APP_NAME ?? "Edge Voice Rooms",
         timestamp: new Date().toISOString()
       });
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/app-config") {
+      return handleGetAppConfig(env);
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/admin/session") {
+      return handleAdminSession(request, env);
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/admin/config") {
+      return handleGetAdminConfig(request, env);
+    }
+
+    if (request.method === "PUT" && url.pathname === "/api/admin/config") {
+      return handleUpdateAdminConfig(request, env);
     }
 
     if (request.method === "POST" && url.pathname === "/api/rooms") {
