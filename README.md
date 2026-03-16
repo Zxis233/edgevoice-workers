@@ -1,4 +1,10 @@
-# Edge Voice Rooms - 基于纯 Cloudflare 服务的实时语音
+# Edge Voice Workers - 基于纯 Cloudflare 服务的实时语音
+
+<div align="center">
+  <img height="160px" src="logo.png" style="max-width: 100%; height: auto; max-height: 160px;">
+</div>
+
+</br>
 
 <p align="center">
   <a href="https://github.com/Zxis233/edgevoice-workers/graphs/contributors">
@@ -15,7 +21,7 @@
   </a>
 </p>
 
-Edge Voice Rooms 是一个基于 Cloudflare Workers、Durable Objects、D1、R2 和原生 WebRTC 的 4-5 人小房间语音应用示例。它提供一个完整可运行的边缘语音房基线实现：前端静态资源由 Workers Assets 托管，房间状态与信令由 Worker + Durable Object 负责，房间会话记录写入 D1，结束后归档到 R2。
+Edge Voice Workers 是一个基于 Cloudflare Workers、Durable Objects、D1、R2 和原生 WebRTC 的 4-5 人小房间语音应用示例。它提供一个完整可运行的边缘语音房基线实现：前端静态资源由 Workers Assets 托管，房间状态与信令由 Worker + Durable Object 负责，房间会话记录写入 D1，结束后归档到 R2。
 
 ## 功能简介
 
