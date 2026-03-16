@@ -1,6 +1,9 @@
 import { SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 
+const ADMIN_TRIGGER_NAME = "admin";
+const ADMIN_TRIGGER_ROOM_ID = "admin-room";
+
 async function createRoom(title = "Daily Sync") {
   const response = await SELF.fetch("http://example.com/api/rooms", {
     method: "POST",
@@ -55,10 +58,21 @@ describe("voice room api", () => {
 
     const unauthorized = await SELF.fetch("http://example.com/api/admin/config", {
       headers: {
-        "x-admin-token": "not-admin"
+        "x-admin-token": ADMIN_TRIGGER_NAME
       }
     });
     expect(unauthorized.status).toBe(401);
+
+    const incompleteAdminSession = await SELF.fetch("http://example.com/api/admin/session", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        username: ADMIN_TRIGGER_NAME
+      })
+    });
+    expect(incompleteAdminSession.status).toBe(401);
 
     const adminSession = await SELF.fetch("http://example.com/api/admin/session", {
       method: "POST",
@@ -66,7 +80,8 @@ describe("voice room api", () => {
         "content-type": "application/json"
       },
       body: JSON.stringify({
-        username: "__admin__"
+        username: ADMIN_TRIGGER_NAME,
+        roomId: ADMIN_TRIGGER_ROOM_ID
       })
     });
     expect(adminSession.status).toBe(200);
@@ -75,7 +90,8 @@ describe("voice room api", () => {
       method: "PUT",
       headers: {
         "content-type": "application/json",
-        "x-admin-token": "__admin__"
+        "x-admin-token": ADMIN_TRIGGER_NAME,
+        "x-admin-room-id": ADMIN_TRIGGER_ROOM_ID
       },
       body: JSON.stringify({
         allowRoomCreation: false,
@@ -112,7 +128,8 @@ describe("voice room api", () => {
       method: "PUT",
       headers: {
         "content-type": "application/json",
-        "x-admin-token": "__admin__"
+        "x-admin-token": ADMIN_TRIGGER_NAME,
+        "x-admin-room-id": ADMIN_TRIGGER_ROOM_ID
       },
       body: JSON.stringify({
         allowRoomCreation: true,

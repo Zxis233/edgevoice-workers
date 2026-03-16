@@ -67,7 +67,7 @@ Edge Voice Rooms 是一个基于 Cloudflare Workers、Durable Objects、D1、R2 
 - 使用 `RTCPeerConnection` 建立音频 mesh
 - 本地麦克风状态、成员状态、连接状态在 UI 中展示
 - 对移动端 `getUserMedia` 做了兼容与错误提示处理
-- 当房间 ID 留空且输入管理员昵称时，点击“加入现有房间”会进入配置面板
+- 只有同时输入管理员昵称和特殊房间 ID，点击“加入现有房间”才会进入配置面板
 
 ## 项目结构
 
@@ -114,12 +114,13 @@ npm install
 npm run db:migrate:local
 ```
 
-### 本地管理员昵称
+### 本地管理员入口
 
-如果你想把管理员昵称改成 `admin`，可以在项目根目录创建 `.dev.vars`：
+如果你想自定义管理员昵称和特殊房间 ID，可以在项目根目录创建 `.dev.vars`：
 
 ```dotenv
 ADMIN_TRIGGER_NAME=admin
+ADMIN_TRIGGER_ROOM_ID=admin-room
 ```
 
 ### 启动本地开发
@@ -169,8 +170,8 @@ npm test
 
 进入方式：
 
-1. 房间 ID 留空
-2. 在昵称输入管理员昵称
+1. 在昵称输入管理员昵称
+2. 在房间 ID 输入特殊管理员房间 ID
 3. 点击“加入现有房间”
 
 管理员面板当前支持：
@@ -181,7 +182,7 @@ npm test
 
 ## 部署方法
 
-**如果要部署到公开网络，请务必修改管理员名称！**
+**如果要部署到公开网络，请务必同时修改管理员名称和特殊房间 ID！**
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Zxis233/edgevoice-workers)
 

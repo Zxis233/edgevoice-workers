@@ -54,6 +54,7 @@ const state = {
   isLeaving: false,
   publicConfig: { ...DEFAULT_APP_CONFIG },
   adminToken: "",
+  adminRoomId: "",
   isAdminMode: false
 };
 
@@ -802,21 +803,21 @@ async function loadAppConfig() {
   return payload;
 }
 
-async function tryEnterAdminMode({ throwOnUnauthorized = false } = {}) {
+async function tryEnterAdminMode(roomId) {
   const username = ensureDisplayName();
+  const normalizedRoomId = normalizeRoomId(roomId || elements.roomIdInput.value);
   const response = await fetch("/api/admin/session", {
     method: "POST",
     headers: {
       "content-type": "application/json"
     },
-    body: JSON.stringify({ username })
+    body: JSON.stringify({
+      username,
+      roomId: normalizedRoomId
+    })
   });
 
   if (response.status === 401) {
-    if (throwOnUnauthorized) {
-      throw new Error("管理员昵称不匹配。");
-    }
-
     return false;
   }
 
@@ -826,6 +827,7 @@ async function tryEnterAdminMode({ throwOnUnauthorized = false } = {}) {
   }
 
   state.adminToken = username;
+  state.adminRoomId = normalizedRoomId;
   state.isAdminMode = true;
   applyPublicConfig(data.config);
   syncAdminForm();
@@ -835,6 +837,7 @@ async function tryEnterAdminMode({ throwOnUnauthorized = false } = {}) {
 
 function exitAdminMode(message = "已退出管理员模式。") {
   state.adminToken = "";
+  state.adminRoomId = "";
   state.isAdminMode = false;
   renderAdminPanel();
   updateButtons();
@@ -850,15 +853,16 @@ function readAdminForm() {
 }
 
 async function saveAdminConfig() {
-  if (!state.adminToken) {
-    throw new Error("管理员会话已失效，请重新输入特殊昵称并点击加入。");
+  if (!state.adminToken || !state.adminRoomId) {
+    throw new Error("管理员会话已失效，请重新输入特殊管理员昵称和房间 ID 后点击加入。");
   }
 
   const response = await fetch("/api/admin/config", {
     method: "PUT",
     headers: {
       "content-type": "application/json",
-      "x-admin-token": state.adminToken
+      "x-admin-token": state.adminToken,
+      "x-admin-room-id": state.adminRoomId
     },
     body: JSON.stringify(readAdminForm())
   });
@@ -866,6 +870,7 @@ async function saveAdminConfig() {
   const data = await response.json().catch(() => ({}));
   if (response.status === 401) {
     state.adminToken = "";
+    state.adminRoomId = "";
     state.isAdminMode = false;
     renderAdminPanel();
     updateButtons();
@@ -1078,11 +1083,10 @@ elements.joinButton.addEventListener("click", async () => {
     const requestedRoomId = normalizeRoomId(elements.roomIdInput.value || state.roomId);
 
     if (!requestedRoomId) {
-      await tryEnterAdminMode({ throwOnUnauthorized: true });
-      return;
+      throw new Error("请输入房间 ID。");
     }
 
-    const enteredAdminMode = await tryEnterAdminMode();
+    const enteredAdminMode = await tryEnterAdminMode(requestedRoomId);
     if (enteredAdminMode) {
       return;
     }

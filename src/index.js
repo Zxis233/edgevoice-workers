@@ -12,7 +12,8 @@ import {
   previewRoomId
 } from "./room-utils.js";
 
-const DEFAULT_ADMIN_TRIGGER_NAME = "__admin__";
+const DEFAULT_ADMIN_TRIGGER_NAME = "admin";
+const DEFAULT_ADMIN_TRIGGER_ROOM_ID = "admin-room";
 
 function buildJoinUrl(requestUrl, roomId) {
   const joinUrl = new URL(requestUrl.origin);
@@ -25,12 +26,34 @@ function getAdminTriggerName(env) {
   return configured || DEFAULT_ADMIN_TRIGGER_NAME;
 }
 
+function normalizeAdminRoomId(value) {
+  return `${value ?? ""}`
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/-{2,}/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 32);
+}
+
+function getAdminTriggerRoomId(env) {
+  const configured = normalizeAdminRoomId(env.ADMIN_TRIGGER_ROOM_ID);
+  return configured || DEFAULT_ADMIN_TRIGGER_ROOM_ID;
+}
+
 function getAdminToken(request) {
   return normalizeDisplayName(request.headers.get("x-admin-token"));
 }
 
+function getAdminRoomId(request) {
+  return normalizeAdminRoomId(request.headers.get("x-admin-room-id"));
+}
+
 function isAdminRequest(request, env) {
-  return getAdminToken(request) === getAdminTriggerName(env);
+  return (
+    getAdminToken(request) === getAdminTriggerName(env) &&
+    getAdminRoomId(request) === getAdminTriggerRoomId(env)
+  );
 }
 
 function buildConfigPayload(config) {
@@ -118,8 +141,14 @@ async function handleGetAppConfig(env) {
 async function handleAdminSession(request, env) {
   const payload = await readJson(request);
   const username = normalizeDisplayName(payload.username);
+  const roomId = normalizeAdminRoomId(payload.roomId);
 
-  if (!username || username !== getAdminTriggerName(env)) {
+  if (
+    !username ||
+    !roomId ||
+    username !== getAdminTriggerName(env) ||
+    roomId !== getAdminTriggerRoomId(env)
+  ) {
     return errorResponse(401, "管理员身份校验失败。");
   }
 
