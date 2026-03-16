@@ -1,6 +1,7 @@
 const ROOM_TITLE_LIMIT = 48;
 const DISPLAY_NAME_LIMIT = 32;
 const ROOM_NAME_PATTERN_LIMIT = 48;
+const PEER_ID_LIMIT = 64;
 
 export const DEFAULT_APP_CONFIG = Object.freeze({
   allowRoomCreation: true,
@@ -90,7 +91,7 @@ export function normalizeDisplayName(value) {
 
 export function normalizePeerId(value) {
   const trimmed = `${value ?? ""}`.trim();
-  return trimmed.replace(/[^a-zA-Z0-9-_]/g, "").slice(0, 32);
+  return trimmed.replace(/[^a-zA-Z0-9-_]/g, "").slice(0, PEER_ID_LIMIT);
 }
 
 export function clampCapacity(value, env) {

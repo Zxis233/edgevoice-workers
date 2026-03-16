@@ -718,6 +718,7 @@ async function handleSocketMessage(rawData) {
 
   if (message.type === "welcome") {
     state.roomId = message.roomId;
+    state.selfPeerId = message.self?.peerId ?? state.selfPeerId;
     state.roomMeta = {
       ...(state.roomMeta ?? {}),
       id: message.roomId,
