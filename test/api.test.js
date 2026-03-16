@@ -1,8 +1,8 @@
-import { SELF } from "cloudflare:test";
+import { SELF, env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 
-const ADMIN_TRIGGER_NAME = "admin";
-const ADMIN_TRIGGER_ROOM_ID = "admin-room";
+const ADMIN_TRIGGER_NAME = env.ADMIN_TRIGGER_NAME ?? "admin";
+const ADMIN_TRIGGER_ROOM_ID = env.ADMIN_TRIGGER_ROOM_ID ?? "admin-room";
 
 async function createRoom(title = "Daily Sync") {
   const response = await SELF.fetch("http://example.com/api/rooms", {

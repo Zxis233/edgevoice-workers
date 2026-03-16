@@ -88,6 +88,24 @@ async function waitForCondition(check, timeoutMs = 2500) {
 }
 
 describe("voice room signaling", () => {
+  it("preserves full UUID peer ids when a client joins", async () => {
+    const created = await createRoom("UUID Peer");
+    const uuidPeerId = "55ca1f0a-2a6c-45f4-ae45-135feceaeaf1";
+
+    const alice = await openSocket(created.room.id, uuidPeerId, "Alice");
+    const aliceWelcome = await alice.next();
+
+    expect(aliceWelcome).toMatchObject({
+      type: "welcome",
+      self: {
+        peerId: uuidPeerId,
+        displayName: "Alice"
+      }
+    });
+
+    alice.socket.close(1000, "bye");
+  });
+
   it("relays signaling messages and archives the room when everyone leaves", async () => {
     const created = await createRoom();
 
@@ -156,7 +174,9 @@ describe("voice room signaling", () => {
     alice.socket.close(1000, "bye");
 
     const archiveEntry = await waitForCondition(async () => {
-      const listing = await env.ROOM_ARCHIVE.list();
+      const listing = await env.ROOM_ARCHIVE.list({
+        prefix: `rooms/${created.room.id}/`
+      });
       return listing.objects[0] ?? null;
     });
 
