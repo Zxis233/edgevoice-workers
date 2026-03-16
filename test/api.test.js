@@ -42,4 +42,87 @@ describe("voice room api", () => {
     expect(payload.iceServers).toHaveLength(1);
     expect(payload.iceServers[0].urls).toContain("stun:stun.cloudflare.com:3478");
   });
+
+  it("lets admin update app config and enforces room creation policy", async () => {
+    const publicConfigResponse = await SELF.fetch("http://example.com/api/app-config");
+    expect(publicConfigResponse.status).toBe(200);
+
+    const publicConfig = await publicConfigResponse.json();
+    expect(publicConfig.config.allowRoomCreation).toBe(true);
+    expect(publicConfig.config.roomNamePattern).toBe("room-{random}");
+    expect(publicConfig.config.roomRandomLength).toBe(10);
+    expect(publicConfig.roomIdPreview).toMatch(/^room-[a-z0-9]{10}$/);
+
+    const unauthorized = await SELF.fetch("http://example.com/api/admin/config", {
+      headers: {
+        "x-admin-token": "not-admin"
+      }
+    });
+    expect(unauthorized.status).toBe(401);
+
+    const adminSession = await SELF.fetch("http://example.com/api/admin/session", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        username: "__admin__"
+      })
+    });
+    expect(adminSession.status).toBe(200);
+
+    const updatedConfigResponse = await SELF.fetch("http://example.com/api/admin/config", {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+        "x-admin-token": "__admin__"
+      },
+      body: JSON.stringify({
+        allowRoomCreation: false,
+        roomNamePattern: "team-{random}",
+        roomRandomLength: 6
+      })
+    });
+    expect(updatedConfigResponse.status).toBe(200);
+
+    const updatedConfig = await updatedConfigResponse.json();
+    expect(updatedConfig.config.allowRoomCreation).toBe(false);
+    expect(updatedConfig.config.roomNamePattern).toBe("team-{random}");
+    expect(updatedConfig.config.roomRandomLength).toBe(6);
+    expect(updatedConfig.roomIdPreview).toMatch(/^team-[a-z0-9]{6}$/);
+
+    const refreshedConfigResponse = await SELF.fetch("http://example.com/api/app-config");
+    const refreshedConfig = await refreshedConfigResponse.json();
+    expect(refreshedConfig.config.allowRoomCreation).toBe(false);
+    expect(refreshedConfig.roomIdPreview).toMatch(/^team-[a-z0-9]{6}$/);
+
+    const blockedCreate = await SELF.fetch("http://example.com/api/rooms", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        title: "Should Not Exist",
+        capacity: 5
+      })
+    });
+    expect(blockedCreate.status).toBe(403);
+
+    const restoredConfigResponse = await SELF.fetch("http://example.com/api/admin/config", {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+        "x-admin-token": "__admin__"
+      },
+      body: JSON.stringify({
+        allowRoomCreation: true,
+        roomNamePattern: "team-{random}",
+        roomRandomLength: 6
+      })
+    });
+    expect(restoredConfigResponse.status).toBe(200);
+
+    const created = await createRoom("Configurable ID");
+    expect(created.room.id).toMatch(/^team-[a-z0-9]{6}$/);
+  });
 });

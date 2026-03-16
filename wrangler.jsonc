@@ -45,7 +45,8 @@
 		"APP_NAME": "Edge Voice Rooms",
 		"DEFAULT_ROOM_CAPACITY": "5",
 		"MAX_ROOM_CAPACITY": "5",
-		"TURN_TTL_SECONDS": "3600"
+		"TURN_TTL_SECONDS": "3600",
+		"ADMIN_TRIGGER_NAME": "admin"
 	},
 	"observability": {
 		"logs": {
